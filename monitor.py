@@ -12,15 +12,10 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 STATE_FILE = "state.json"
-
-# Спробуємо офіційний домен DeyeCloud, а резервним — Solarman
-API_HOSTS = [
-    "https://api.deyecloud.com",
-    "https://api.solarmanpv.com"
-]
+BASE_URL = "https://eu1-developer.deyecloud.com"
 
 def get_password_hash(password: str) -> str:
-    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+    return hashlib.sha256(password.encode('utf-8')).hexdigest().lower()
 
 def send_telegram(message: str):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -35,44 +30,55 @@ def send_telegram(message: str):
         print(f"Помилка відправки в Telegram: {e}")
 
 def get_deye_token():
-    for base_url in API_HOSTS:
-        url = f"{base_url}/account/v1.0/token?appId={APP_ID}&language=en"
-        payload = {
-            "appSecret": APP_SECRET,
-            "email": DEYE_EMAIL,
-            "password": get_password_hash(DEYE_PASSWORD)
-        }
-        try:
-            res = requests.post(url, json=payload, timeout=15)
-            data = res.json()
-            if data.get("success"):
-                return base_url, data.get("access_token")
-            else:
-                print(f"Спроба {base_url} повернула: {data.get('msg')}")
-        except Exception as e:
-            print(f"Помилка з'єднання з {base_url}: {e}")
+    url = f"{BASE_URL}/v1.0/account/token?appId={APP_ID}"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "appSecret": APP_SECRET,
+        "email": DEYE_EMAIL,
+        "password": get_password_hash(DEYE_PASSWORD)
+    }
+    res = requests.post(url, headers=headers, json=payload, timeout=15)
+    data = res.json()
+    
+    if data.get("success") or data.get("code") == "1000000":
+        return data.get("accessToken") or data.get("access_token")
+    
+    raise Exception(f"Помилка авторизації Deye: {data}")
 
-    raise Exception("Не вдалося отримати токен на жодному з серверів Deye.")
-
-def check_grid_status(base_url, token):
-    url = f"{base_url}/device/v1.0/currentData?appId={APP_ID}"
-    headers = {"Authorization": f"bearer {token}"}
-    payload = {"deviceSn": DEVICE_SN}
+def check_grid_status(token):
+    # Отримання останніх даних пристрою
+    url = f"{BASE_URL}/v1.0/device/latest"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"bearer {token}"
+    }
+    payload = {
+        "deviceList": [DEVICE_SN]
+    }
     
     res = requests.post(url, headers=headers, json=payload, timeout=15)
     data = res.json()
     
     grid_voltage = 0.0
-    for item in data.get("dataList", []):
-        key = item.get("key", "").lower()
-        if "grid" in key and "volt" in key:
-            try:
-                grid_voltage = float(item.get("value", 0))
-                break
-            except ValueError:
-                pass
-                
-    return grid_voltage > 50.0, grid_voltage
+    device_data = data.get("deviceDataList", [])
+    if not device_data:
+        # Резервний запит, якщо формат списку інший
+        device_data = data.get("dataList", [])
+        
+    for item in device_data:
+        if str(item.get("deviceSn")) == str(DEVICE_SN):
+            for point in item.get("dataList", []):
+                key = str(point.get("key", "")).lower()
+                if "grid" in key and "volt" in key:
+                    try:
+                        grid_voltage = float(point.get("value", 0))
+                        break
+                    except (ValueError, TypeError):
+                        pass
+
+    # Якщо напруга не визначена напряму через ключі, перевіряємо статус зв'язку
+    is_online = grid_voltage > 50.0
+    return is_online, grid_voltage
 
 def main():
     last_state = None
@@ -83,8 +89,8 @@ def main():
         except Exception:
             last_state = None
 
-    base_url, token = get_deye_token()
-    is_online, voltage = check_grid_status(base_url, token)
+    token = get_deye_token()
+    is_online, voltage = check_grid_status(token)
     print(f"Стан: {'Є живлення' if is_online else 'Немає живлення'} ({voltage:.1f} V)")
 
     if last_state is not None:
