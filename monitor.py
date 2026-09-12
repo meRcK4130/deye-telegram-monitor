@@ -90,14 +90,26 @@ def check_grid_status(token):
     return is_online, grid_voltage
 
 def main():
+    last_state = None
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r") as f:
+                last_state = json.load(f).get("grid_online")
+        except Exception:
+            last_state = None
+
     token = get_deye_token()
     is_online, voltage = check_grid_status(token)
     print(f"Стан: {'Є живлення' if is_online else 'Немає живлення'} ({voltage:.1f} V)")
 
-    status_icon = "🟢" if is_online else "🔴"
-    status_text = "Зовнішнє живлення Є" if is_online else "Зовнішнє живлення ВІДСУТНЄ"
-    
-    send_telegram(f"{status_icon} <b>Поточний статус Deye:</b>\n{status_text}\nНапруга мережі: {voltage:.1f} V")
+    # Надсилаємо сповіщення ТІЛЬКИ при зміні стану:
+    if last_state is not None:
+        if last_state and not is_online:
+            send_telegram("🔴 <b>Зникло зовнішнє живлення!</b>\nІнвертор перейшов на акумулятори.")
+        elif not last_state and is_online:
+            send_telegram(f"🟢 <b>Зовнішнє живлення відновлено!</b>\nПоточна напруга: {voltage:.1f} V")
+    else:
+        print("Перший запуск: початковий стан успішно збережено в пам'ять.")
 
     with open(STATE_FILE, "w") as f:
         json.dump({"grid_online": is_online}, f)
