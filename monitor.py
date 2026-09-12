@@ -32,17 +32,29 @@ def send_telegram(message: str):
 def get_deye_token():
     url = f"{BASE_URL}/v1.0/account/token?appId={APP_ID}"
     headers = {"Content-Type": "application/json"}
-    payload = {
-        "appSecret": APP_SECRET,
-        "email": DEYE_EMAIL,
-        "password": get_password_hash(DEYE_PASSWORD)
-    }
-    res = requests.post(url, headers=headers, json=payload, timeout=15)
-    data = res.json()
     
+    # Спроба 1: з SHA-256 хешем
+    payload_hash = {
+        "appSecret": APP_SECRET.strip(),
+        "email": DEYE_EMAIL.strip(),
+        "password": get_password_hash(DEYE_PASSWORD.strip())
+    }
+    res = requests.post(url, headers=headers, json=payload_hash, timeout=15)
+    data = res.json()
     if data.get("success") or data.get("code") == "1000000":
         return data.get("accessToken") or data.get("access_token")
-    
+
+    # Спроба 2: з прямим паролем (plain text)
+    payload_plain = {
+        "appSecret": APP_SECRET.strip(),
+        "email": DEYE_EMAIL.strip(),
+        "password": DEYE_PASSWORD.strip()
+    }
+    res = requests.post(url, headers=headers, json=payload_plain, timeout=15)
+    data = res.json()
+    if data.get("success") or data.get("code") == "1000000":
+        return data.get("accessToken") or data.get("access_token")
+
     raise Exception(f"Помилка авторизації Deye: {data}")
 
 def check_grid_status(token):
