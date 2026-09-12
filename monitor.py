@@ -24,10 +24,9 @@ def send_telegram(message: str):
         "text": message,
         "parse_mode": "HTML"
     }
-    try:
-        requests.post(url, json=payload, timeout=10)
-    except Exception as e:
-        print(f"Помилка відправки в Telegram: {e}")
+    print(f"-> Відправка в Telegram (Chat ID: {CHAT_ID})...")
+    res = requests.post(url, json=payload, timeout=10)
+    print(f"-> Відповідь Telegram API: {res.status_code} {res.text}")
 
 def get_deye_token():
     url = f"{BASE_URL}/v1.0/account/token?appId={APP_ID}"
@@ -44,7 +43,7 @@ def get_deye_token():
     if data.get("success") or data.get("code") == "1000000":
         return data.get("accessToken") or data.get("access_token")
 
-    # Спроба 2: з прямим паролем (plain text)
+    # Спроба 2: plain text
     payload_plain = {
         "appSecret": APP_SECRET.strip(),
         "email": DEYE_EMAIL.strip(),
@@ -58,27 +57,26 @@ def get_deye_token():
     raise Exception(f"Помилка авторизації Deye: {data}")
 
 def check_grid_status(token):
-    # Отримання останніх даних пристрою
     url = f"{BASE_URL}/v1.0/device/latest"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"bearer {token}"
     }
     payload = {
-        "deviceList": [DEVICE_SN]
+        "deviceList": [DEVICE_SN.strip()]
     }
     
     res = requests.post(url, headers=headers, json=payload, timeout=15)
     data = res.json()
+    print(f"-> Відповідь Deye Data: {data}")
     
     grid_voltage = 0.0
     device_data = data.get("deviceDataList", [])
     if not device_data:
-        # Резервний запит, якщо формат списку інший
         device_data = data.get("dataList", [])
         
     for item in device_data:
-        if str(item.get("deviceSn")) == str(DEVICE_SN):
+        if str(item.get("deviceSn")) == str(DEVICE_SN.strip()):
             for point in item.get("dataList", []):
                 key = str(point.get("key", "")).lower()
                 if "grid" in key and "volt" in key:
@@ -88,35 +86,21 @@ def check_grid_status(token):
                     except (ValueError, TypeError):
                         pass
 
-    # Якщо напруга не визначена напряму через ключі, перевіряємо статус зв'язку
     is_online = grid_voltage > 50.0
     return is_online, grid_voltage
-    
-def main():
-    last_state = None
-    if os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE, "r") as f:
-                last_state = json.load(f).get("grid_online")
-        except Exception:
-            last_state = None
 
+def main():
     token = get_deye_token()
     is_online, voltage = check_grid_status(token)
     print(f"Стан: {'Є живлення' if is_online else 'Немає живлення'} ({voltage:.1f} V)")
 
-    # НАДСИЛАННЯ ПОТОЧНОГО СТАТУСУ ПРЯМО ЗАРАЗ:
     status_icon = "🟢" if is_online else "🔴"
     status_text = "Зовнішнє живлення Є" if is_online else "Зовнішнє живлення ВІДСУТНЄ"
+    
     send_telegram(f"{status_icon} <b>Поточний статус Deye:</b>\n{status_text}\nНапруга мережі: {voltage:.1f} V")
-
-    if last_state is not None:
-        if last_state and not is_online:
-            send_telegram("🔴 <b>Зникло зовнішнє живлення!</b>\nІнвертор перейшов на акумулятори.")
-        elif not last_state and is_online:
-            send_telegram(f"🟢 <b>Зовнішнє живлення відновлено!</b>\nПоточна напруга: {voltage:.1f} V")
-    else:
-        print("Перший запуск: стан ініціалізовано.")
 
     with open(STATE_FILE, "w") as f:
         json.dump({"grid_online": is_online}, f)
+
+if __name__ == "__main__":
+    main()
