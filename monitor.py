@@ -3,7 +3,6 @@ import json
 import os
 import requests
 
-# Отримання параметрів із Secrets
 APP_ID = os.getenv("APP_ID")
 APP_SECRET = os.getenv("APP_SECRET")
 DEYE_EMAIL = os.getenv("DEYE_EMAIL")
@@ -13,6 +12,12 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 STATE_FILE = "state.json"
+
+# Спробуємо офіційний домен DeyeCloud, а резервним — Solarman
+API_HOSTS = [
+    "https://api.deyecloud.com",
+    "https://api.solarmanpv.com"
+]
 
 def get_password_hash(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
@@ -30,20 +35,27 @@ def send_telegram(message: str):
         print(f"Помилка відправки в Telegram: {e}")
 
 def get_deye_token():
-    url = f"https://api.solarmanpv.com/account/v1.0/token?appId={APP_ID}&language=en"
-    payload = {
-        "appSecret": APP_SECRET,
-        "email": DEYE_EMAIL,
-        "password": get_password_hash(DEYE_PASSWORD)
-    }
-    res = requests.post(url, json=payload, timeout=15)
-    data = res.json()
-    if data.get("success"):
-        return data.get("access_token")
-    raise Exception(f"Помилка авторизації Deye: {data}")
+    for base_url in API_HOSTS:
+        url = f"{base_url}/account/v1.0/token?appId={APP_ID}&language=en"
+        payload = {
+            "appSecret": APP_SECRET,
+            "email": DEYE_EMAIL,
+            "password": get_password_hash(DEYE_PASSWORD)
+        }
+        try:
+            res = requests.post(url, json=payload, timeout=15)
+            data = res.json()
+            if data.get("success"):
+                return base_url, data.get("access_token")
+            else:
+                print(f"Спроба {base_url} повернула: {data.get('msg')}")
+        except Exception as e:
+            print(f"Помилка з'єднання з {base_url}: {e}")
 
-def check_grid_status(token):
-    url = f"https://api.solarmanpv.com/device/v1.0/currentData?appId={APP_ID}"
+    raise Exception("Не вдалося отримати токен на жодному з серверів Deye.")
+
+def check_grid_status(base_url, token):
+    url = f"{base_url}/device/v1.0/currentData?appId={APP_ID}"
     headers = {"Authorization": f"bearer {token}"}
     payload = {"deviceSn": DEVICE_SN}
     
@@ -71,8 +83,8 @@ def main():
         except Exception:
             last_state = None
 
-    token = get_deye_token()
-    is_online, voltage = check_grid_status(token)
+    base_url, token = get_deye_token()
+    is_online, voltage = check_grid_status(base_url, token)
     print(f"Стан: {'Є живлення' if is_online else 'Немає живлення'} ({voltage:.1f} V)")
 
     if last_state is not None:
