@@ -91,7 +91,7 @@ def check_grid_status(token):
     # Якщо напруга не визначена напряму через ключі, перевіряємо статус зв'язку
     is_online = grid_voltage > 50.0
     return is_online, grid_voltage
-
+    
 def main():
     last_state = None
     if os.path.exists(STATE_FILE):
@@ -105,6 +105,11 @@ def main():
     is_online, voltage = check_grid_status(token)
     print(f"Стан: {'Є живлення' if is_online else 'Немає живлення'} ({voltage:.1f} V)")
 
+    # НАДСИЛАННЯ ПОТОЧНОГО СТАТУСУ ПРЯМО ЗАРАЗ:
+    status_icon = "🟢" if is_online else "🔴"
+    status_text = "Зовнішнє живлення Є" if is_online else "Зовнішнє живлення ВІДСУТНЄ"
+    send_telegram(f"{status_icon} <b>Поточний статус Deye:</b>\n{status_text}\nНапруга мережі: {voltage:.1f} V")
+
     if last_state is not None:
         if last_state and not is_online:
             send_telegram("🔴 <b>Зникло зовнішнє живлення!</b>\nІнвертор перейшов на акумулятори.")
@@ -115,6 +120,3 @@ def main():
 
     with open(STATE_FILE, "w") as f:
         json.dump({"grid_online": is_online}, f)
-
-if __name__ == "__main__":
-    main()
