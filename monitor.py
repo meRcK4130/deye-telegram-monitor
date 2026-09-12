@@ -73,7 +73,7 @@ def main():
 
     token = get_deye_token()
     is_online, voltage = check_grid_status(token)
-    print(f"Поточний стан мережі: {'Є живлення' if is_online else 'Немає живлення'} ({voltage:.1f} V)")
+    print(f"Стан: {'Є живлення' if is_online else 'Немає живлення'} ({voltage:.1f} V)")
 
     if last_state is not None:
         if last_state and not is_online:
