@@ -1,0 +1,51 @@
+name: Check Deye Grid Status
+
+on:
+  schedule:
+    # Запуск кожні 15 хвилин з 08:00 до 22:00 (за київським часом)
+    - cron: '*/15 5-20 * * *'
+  workflow_dispatch: # Кнопка для ручного запуску
+
+jobs:
+  check-status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests
+
+      # Відновлення попереднього стану
+      - name: Restore previous state
+        uses: actions/cache/restore@v4
+        with:
+          path: state.json
+          key: deye-state-file
+
+      # Виконання перевірки
+      - name: Run Deye monitor
+        env:
+          APP_ID: ${{ secrets.APP_ID }}
+          APP_SECRET: ${{ secrets.APP_SECRET }}
+          DEYE_EMAIL: ${{ secrets.DEYE_EMAIL }}
+          DEYE_PASSWORD: ${{ secrets.DEYE_PASSWORD }}
+          DEVICE_SN: ${{ secrets.DEVICE_SN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: |
+          python monitor.py
+
+      # Збереження оновленого стану
+      - name: Save updated state
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: state.json
+          key: deye-state-file
