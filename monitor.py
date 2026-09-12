@@ -18,16 +18,22 @@ def get_password_hash(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest().lower()
 
 def send_telegram(message: str):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML"
-    }
-    print(f"-> Відправка в Telegram (Chat ID: {CHAT_ID})...")
-    res = requests.post(url, json=payload, timeout=10)
-    print(f"-> Відповідь Telegram API: {res.status_code} {res.text}")
-
+    # Розбиваємо рядок із Chat ID за комою
+    chat_ids = [cid.strip() for cid in CHAT_ID.split(",") if cid.strip()]
+    
+    for cid in chat_ids:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": cid,
+            "text": message,
+            "parse_mode": "HTML"
+        }
+        try:
+            res = requests.post(url, json=payload, timeout=10)
+            print(f"-> Надіслано до {cid}: {res.status_code}")
+        except Exception as e:
+            print(f"Помилка відправки для {cid}: {e}")
+            
 def get_deye_token():
     url = f"{BASE_URL}/v1.0/account/token?appId={APP_ID}"
     headers = {"Content-Type": "application/json"}
